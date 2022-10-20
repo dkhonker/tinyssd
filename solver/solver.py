@@ -1,253 +1,92 @@
-import datetime
-import os
-import time
-import functools
-
 import torch
-from torch import nn
-from munch import Munch
+import torchvision
+import os
+import pandas as pd
+import torch.nn as nn
+import torch.nn.functional as F
+import cv2
+import matplotlib.patches as patches
+import matplotlib.pyplot as plt
+import glob
 
-from data.fetcher import Fetcher
-from metrics.eval import calculate_total_fid
-from metrics.fid import calculate_fid_given_paths
-from models.build import build_model
-from solver.loss import compute_g_loss, compute_d_loss
-from solver.misc import translate_using_latent, generate_samples
-from solver.utils import he_init, moving_average
-from utils.checkpoint import CheckpointIO
-from utils.file import delete_dir, write_record, delete_model, delete_sample
-from utils.misc import get_datetime, send_message
-from utils.model import count_parameters
+from utils.utils import *
+
+########################training##############################
 
 
-class Solver:
-    def __init__(self, args):
-        super().__init__()
-        self.args = args
-        self.device = torch.device(args.device)
-        self.nets, self.nets_ema = build_model(args)
-        for name, module in self.nets.items():
-            count_parameters(module, name)
-        if args.multi_gpu:
-            for net in self.nets.keys():
-                self.nets[net] = nn.DataParallel(self.nets[net])
-        # self.to(self.device)
-        for net in self.nets.values():
-            net.to(self.device)
-        for net in self.nets_ema.values():
-            net.to(self.device)
 
-        if args.mode == 'train':
-            # Setup optimizers for all nets to learn.
-            self.optims = Munch()
-            for net in self.nets.keys():
-                if net in args.pretrained_models:
-                    continue
-                self.optims[net] = torch.optim.Adam(
-                    params=self.nets[net].parameters(),
-                    lr=args.d_lr if net == 'discriminator' else args.lr,
-                    betas=(args.beta1, args.beta2),
-                    weight_decay=args.weight_decay)
-            self.ckptios = [
-                CheckpointIO(args.model_dir + '/{:06d}_nets.ckpt', multi_gpu=args.multi_gpu, **self.nets),
-                CheckpointIO(args.model_dir + '/{:06d}_nets_ema.ckpt', **self.nets_ema),
-                CheckpointIO(args.model_dir + '/{:06d}_optims.ckpt', **self.optims)]
-        else:
-            self.ckptios = [CheckpointIO(args.model_dir + '/{:06d}_nets_ema.ckpt', **self.nets_ema)]
 
-        self.use_tensorboard = args.use_tensorboard
-        if self.use_tensorboard:
-            from utils.logger import Logger
-            self.logger = Logger(args.log_dir)
-        self.record = functools.partial(write_record, file_path=args.record_file)
-        self.record(f"Please notice eval_use_ema is set to {args.eval_use_ema}.")
 
-    def init_weights(self):
-        if self.args.init_weights == 'he':
-            for name, network in self.nets.items():
-                if name not in self.args.pretrained_models:
-                    print('Initializing %s...' % name, end=' ')
-                    network.apply(he_init)
-                    print('Done.')
-        elif self.args.init_weights == 'default':
-            # Do nothing because the weights has been initialized in this manner.
-            pass
+cls_loss = nn.CrossEntropyLoss(reduction='none')
+bbox_loss = nn.L1Loss(reduction='none')
 
-    def train_mode(self, training=True):
-        for nets in [self.nets, self.nets_ema]:
-            for name, network in nets.items():
-                # We don't care the pretrained models, they should be set to eval() when loading.
-                if name not in self.args.pretrained_models:
-                    network.train(mode=training)
 
-    def eval_mode(self):
-        self.train_mode(training=False)
+def calc_loss(cls_preds, cls_labels, bbox_preds, bbox_labels, bbox_masks):
+    batch_size, num_classes = cls_preds.shape[0], cls_preds.shape[2]
+    cls = cls_loss(cls_preds.reshape(-1, num_classes),
+                   cls_labels.reshape(-1)).reshape(batch_size, -1).mean(dim=1)
+    bbox = bbox_loss(bbox_preds * bbox_masks,
+                     bbox_labels * bbox_masks).mean(dim=1)
+    return cls + bbox
 
-    def save_model(self, step):
-        for ckptio in self.ckptios:
-            ckptio.save(step)
 
-    def load_model(self, step):
-        for ckptio in self.ckptios:
-            ckptio.load(step)
+def cls_eval(cls_preds, cls_labels):
+    # 由于类别预测结果放在最后一维，argmax需要指定最后一维。
+    return float((cls_preds.argmax(dim=-1).type(
+        cls_labels.dtype) == cls_labels).sum())
 
-    def load_model_from_path(self, path):
-        for ckptio in self.ckptios:
-            ckptio.load_from_path(path)
 
-    def zero_grad(self):
-        for optimizer in self.optims.values():
-            optimizer.zero_grad()
+def bbox_eval(bbox_preds, bbox_labels, bbox_masks):
+    return float((torch.abs((bbox_labels - bbox_preds) * bbox_masks)).sum())
 
-    def train(self, loaders):
-        args = self.args
-        nets = self.nets
-        nets_ema = self.nets_ema
-        optims = self.optims
 
-        train_fetcher = Fetcher(loaders.train, args)
-        test_fetcher = Fetcher(loaders.test, args)
+class Accumulator:
+    """
+    在‘n’个变量上累加
+    """
 
-        # Those fixed samples are used to show the trend.
-        fixed_train_sample = next(train_fetcher)
-        fixed_test_sample = next(test_fetcher)
-        if args.selected_path:
-            # actually we don't care y
-            fixed_selected_samples = next(iter(loaders.selected))
-            fixed_selected_samples = fixed_selected_samples.to(self.device)
+    def __init__(self, n):
+        self.data = [0.0] * n
 
-        # Load or initialize the model parameters.
-        if args.start_iter > 0:
-            self.load_model(args.start_iter)
-        else:
-            self.init_weights()
+    def add(self, *args):
+        self.data = [a + float(b) for a, b in zip(self.data, args)]
 
-        best_fid = 10000
-        best_step = 0
-        best_count = 0
-        print('Start training...')
-        start_time = time.time()
-        for step in range(args.start_iter + 1, args.end_iter + 1):
-            self.train_mode()
-            sample_org = next(train_fetcher)  # sample that to be translated
-            sample_ref = next(train_fetcher)  # reference samples
+    def reset(self):
+        self.data = [0.0] * len(self.data)
 
-            # Train the discriminator
-            d_loss, d_loss_ref = compute_d_loss(nets, args, sample_org, sample_ref)
-            self.zero_grad()
-            d_loss.backward()
-            optims.discriminator.step()
+    def _getitem_(self, idx):
+        return self.data[idx]
 
-            # Train the generator
-            g_loss, g_loss_ref = compute_g_loss(nets, args, sample_org, sample_ref)
-            self.zero_grad()
-            g_loss.backward()
-            optims.generator.step()
-            optims.mapping_network.step()
 
-            # Update generator_ema
-            moving_average(nets.generator, nets_ema.generator, beta=args.ema_beta)
-            moving_average(nets.mapping_network, nets_ema.mapping_network, beta=args.ema_beta)
+def trainnet(net,train_iter):
+    trainer = torch.optim.SGD(net.parameters(), lr=0.2, weight_decay=5e-4)
 
-            self.eval_mode()
+    num_epochs = 3  # 20
+    for epoch in range(num_epochs):
+        print('epoch: ', epoch)
+        # 训练精确度的和，训练精确度的和中的示例数
+        # 绝对误差的和，绝对误差的和中的示例数
+        metric = Accumulator(4)
+        net.train()
+        for features, target in train_iter:
+            trainer.zero_grad()
+            X, Y = features.to('cuda'), target.to('cuda')
+            # 生成多尺度的锚框，为每个锚框预测类别和偏移量
+            anchors, cls_preds, bbox_preds = net(X)
+            # 为每个锚框标注类别和偏移量
+            bbox_labels, bbox_masks, cls_labels = multibox_target(anchors, Y)
+            # 根据类别和偏移量的预测和标注值计算损失函数
+            l = calc_loss(cls_preds, cls_labels, bbox_preds, bbox_labels,
+                          bbox_masks)
+            l.mean().backward()
+            trainer.step()
+            metric.add(cls_eval(cls_preds, cls_labels), cls_labels.numel(),
+                       bbox_eval(bbox_preds, bbox_labels, bbox_masks),
+                       bbox_labels.numel())
+        cls_err, bbox_mae = 1 - metric.data[0] / metric.data[1], metric.data[2] / metric.data[3]
+        print(f'class err {cls_err:.2e}, bbox mae {bbox_mae:.2e}')
 
-            if step % args.log_every == 0:
-                elapsed = time.time() - start_time
-                elapsed = str(datetime.timedelta(seconds=elapsed))[:-7]
-                log = "[%s]-[%i/%i]: " % (elapsed, step, args.end_iter)
-                all_losses = dict()
-                for loss, prefix in zip([d_loss_ref, g_loss_ref], ['D/', 'G/']):
-                    for key, value in loss.items():
-                        all_losses[prefix + key] = value
-                log += ' '.join(['%s: [%.4f]' % (key, value) for key, value in all_losses.items()])
-                print(log)
-                if args.save_loss:
-                    if step == args.log_every:
-                        header = ','.join(['iter'] + [str(loss) for loss in all_losses.keys()])
-                        write_record(header, args.loss_file, False)
-                    log = ','.join([str(step)] + [str(loss) for loss in all_losses.values()])
-                    write_record(log, args.loss_file, False)
-                if self.use_tensorboard:
-                    for tag, value in all_losses.items():
-                        self.logger.scalar_summary(tag, value, step)
+        # 保存模型参数
+        if epoch % 10 == 0:
+            torch.save(net.state_dict(), 'net_' + str(epoch) + '.pkl')
 
-            if step % args.sample_every == 0:
-                def training_sampler(which_nets, sample_prefix=""):
-                    repeat_num = 2
-                    N = args.batch_size
-                    y_trg_list = [torch.tensor(y).repeat(N).to(self.device) for y in range(min(args.num_domains, 5))]
-                    z_trg_list = torch.randn(repeat_num, 1, args.latent_dim).repeat(1, N, 1).to(self.device)
-                    translate_using_latent(which_nets, args, self.logger, fixed_test_sample.x, y_trg_list, z_trg_list,
-                                           f"{sample_prefix}test", step)
-                    translate_using_latent(which_nets, args, self.logger, fixed_train_sample.x, y_trg_list, z_trg_list,
-                                           f"{sample_prefix}train", step)
-                    if args.selected_path:
-                        N = fixed_selected_samples.shape[0]
-                        y_trg_list = [torch.tensor(y).repeat(N).to(self.device) for y in
-                                      range(min(args.num_domains, 5))]
-                        z_trg_list = torch.randn(repeat_num, 1, args.latent_dim).repeat(1, N, 1).to(self.device)
-                        translate_using_latent(which_nets, args, self.logger, fixed_selected_samples, y_trg_list, z_trg_list,
-                                               f"{sample_prefix}fixed", step)
-
-                training_sampler(nets_ema, 'EMA/')
-                if args.sample_non_ema:
-                    training_sampler(nets, "NON_EMA/")
-
-            if step % args.save_every == 0:
-                self.save_model(step)
-                last_step = step - args.save_every
-                if last_step != best_step and not args.keep_all_models:
-                    delete_model(args.model_dir, last_step)
-
-            if step % args.eval_every == 0:
-                which_nets = nets_ema if args.eval_use_ema else nets
-                fid = calculate_total_fid(which_nets, args, step, keep_samples=True)
-                if fid < best_fid:
-                    # New best model existed, delete old best model's weights and samples.
-                    if not args.keep_all_models:
-                        delete_model(args.model_dir, best_step)
-                    if not args.keep_all_eval_samples:
-                        delete_sample(args.eval_dir, best_step)
-                    best_fid = fid
-                    best_step = step
-                    # Yeah, we keep all history best models.
-                    self.save_model(best_count)
-                    self.record(f"New best model (fid: {fid:.4f}) saved on step {step}, marked as v{best_count}.")
-                    best_count += 1
-                else:
-                    # Otherwise just delete the samples.
-                    if not args.keep_all_eval_samples:
-                        delete_sample(args.eval_dir, step)
-                info = f"step: {step} current fid: {fid:.2f} history best fid: {best_fid:.2f}"
-                self.logger.scalar_summary(f"METRIC/FID", fid, step)
-                send_message(info, args.exp_id)
-                self.record(info)
-        send_message("Model training completed.", args.exp_id)
-        if not args.keep_best_eval_samples:
-            delete_sample(args.eval_dir, best_step)
-
-    @torch.no_grad()
-    def sample(self):
-        args = self.args
-        if args.eval_iter is None:
-            args.eval_iter = int(input("Please input eval_iter: "))
-        self.load_model(args.eval_iter)
-        which_nets = self.nets_ema if args.eval_use_ema else self.nets
-        if not args.sample_id:
-            args.sample_id = get_datetime()
-        sample_path = os.path.join(args.sample_dir, args.sample_id)
-        generate_samples(which_nets, args, sample_path)
-        return sample_path
-
-    @torch.no_grad()
-    def evaluate(self):
-        args = self.args
-        assert args.compare_path != "", "compare_path shouldn't be empty"
-        target_path = args.compare_path
-        sample_path = self.sample()
-        fid = calculate_fid_given_paths(paths=[target_path, sample_path], img_size=args.img_size,
-                                        batch_size=args.eval_batch_size)
-        print(f"FID is: {fid}")
-        send_message(f"Sample {args.sample_id}'s FID is {fid}")
-        if not args.keep_all_eval_samples:
-            delete_dir(sample_path)
