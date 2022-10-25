@@ -63,8 +63,3 @@
 |   +--- model.py
 ```
 
-## Others
-I referred [StarGAN v2's official implementation](https://github.com/clovaai/stargan-v2) when crafting this template, 
-so don't be surprised if you find some code is similar.
-
-BTW, if you want to deploy your model, you may want to check out [this template](https://github.com/songquanpeng/pytorch-deployment).

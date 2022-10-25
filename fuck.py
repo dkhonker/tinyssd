@@ -17,67 +17,65 @@ import matplotlib.pyplot as plt
 import glob
 from utils.utils import *
 
+def down_sample_blk(in_channels, out_channels):
+    blk = []
+    for _ in range(2):
+        blk.append(nn.Conv2d(in_channels, out_channels,
+                             kernel_size=3, padding=1))
+        blk.append(nn.BatchNorm2d(out_channels))
+        blk.append(nn.ReLU())
+        in_channels = out_channels
+    blk.append(nn.MaxPool2d(2))
+    #blk.append(CBAM(out_channels, 4))
+    return nn.Sequential(*blk)
+
+def base_net():
+    blk = []
+    num_filters = [3, 16, 32, 64]
+    for i in range(len(num_filters) - 1):
+        blk.append(down_sample_blk(num_filters[i], num_filters[i+1]))
+    return nn.Sequential(*blk)
+
+def forward(x, block):
+    return block(x)
+
+class VGGBase(nn.Module):
+    """
+    VGG base convolutions to produce lower-level feature maps.
+    """
+
+    def __init__(self):
+        super(VGGBase, self).__init__()
+        # Standard convolutional layers in VGG16
+        self.conv1_1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
+        self.conv1_2 = nn.Conv2d(16, 16, kernel_size=3, padding=1)
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        self.conv2_1 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
+        self.conv2_2 = nn.Conv2d(32, 32, kernel_size=3, padding=1)
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        self.conv3_1 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+        self.conv3_2 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
+        self.conv3_3 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
+        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=True)  # ceiling (not floor) here for even dims
 
 
+    def forward(self, image):
+        out = F.relu(self.conv1_1(image))
+        out = F.relu(self.conv1_2(out))
+        out = self.pool1(out)
+
+        out = F.relu(self.conv2_1(out))
+        out = F.relu(self.conv2_2(out))
+        out = self.pool2(out)
+
+        out = F.relu(self.conv3_1(out))
+        out = F.relu(self.conv3_2(out))
+        out = F.relu(self.conv3_3(out))
+        out = self.pool3(out)
+        return out
 
 
-batch_size = 32
-from data.loader import load_data
-train_iter = load_data(batch_size)
-
-
-from models.model import TinySSD
-net = TinySSD(num_classes=1)
-net = net.to('cuda')
-
-
-from solver.solver import trainnet
-trainnet(net,train_iter)
-
-from solver.test import predict
-def show_bboxes(axes, bboxes, labels=None, colors=None):
-    """显示所有边界框"""
-
-    def _make_list(obj, default_values=None):
-        if obj is None:
-            obj = default_values
-        elif not isinstance(obj, (list, tuple)):
-            obj = [obj]
-        return obj
-
-    labels = _make_list(labels)
-    colors = _make_list(colors, ['b', 'g', 'r', 'm', 'c'])
-    for i, bbox in enumerate(bboxes):
-        color = colors[i % len(colors)]
-        rect = bbox_to_rect(bbox.detach().numpy(), color)
-        axes.add_patch(rect)
-        if labels and len(labels) > i:
-            text_color = 'k' if color == 'w' else 'w'
-            axes.text(rect.xy[0], rect.xy[1], labels[i],
-                      va='center', ha='center', fontsize=9, color=text_color,
-                      bbox=dict(facecolor=color, lw=0))
-
-
-
-
-def display(img, output, threshold):
-    fig = plt.imshow(img)
-    for row in output:
-        score = float(row[1])
-        if score < threshold:
-            continue
-        h, w = img.shape[0:2]
-        bbox = [row[2:6] * torch.tensor((w, h, w, h), device=row.device)]
-        show_bboxes(fig.axes, bbox, '%.2f' % score, 'w')
-
-files = glob.glob('dataset/test/*.jpg')
-i = 1
-for name in files:
-    plt.subplot(1, 2, i)
-    i += 1
-    X = torchvision.io.read_image(name).unsqueeze(0).float()
-    img = X.squeeze(0).permute(1, 2, 0).long()
-
-    output = predict(X,net)
-    display(img, output.cpu(), threshold=0.5)
-    # break
+print(forward(torch.zeros((2, 3, 256, 256)), base_net()).shape)
+print(forward(torch.zeros((2, 3, 256, 256)), VGGBase()).shape)

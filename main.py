@@ -1,29 +1,43 @@
-from munch import Munch
+import torch
+import torchvision
+import os
+import pandas as pd
+import torch.nn as nn
+import torch.nn.functional as F
+import cv2
+import matplotlib.patches as patches
+import matplotlib.pyplot as plt
+import glob
+from utils.utils import *
 
-from config import setup_cfg, validate_cfg, load_cfg, save_cfg, print_cfg
-from data.loader import get_train_loader, get_test_loader, get_selected_loader
-from solver.solver import Solver
-
+from config import  print_cfg,parse_args
+from solver.train import trainnet
+from solver.test import testnet
 
 def main(args):
-    solver = Solver(args)
-    if args.mode == 'train':
-        loaders = Munch(train=get_train_loader(**args), test=get_test_loader(**args))
-        if args.selected_path:
-            loaders.selected = get_selected_loader(**args)
-        solver.train(loaders)
-    elif args.mode == 'sample':
-        solver.sample()
-    elif args.mode == 'eval':
-        solver.evaluate()
-    else:
-        assert False, f"Unimplemented mode: {args.mode}"
+    from models.model import TinySSD
+    net = TinySSD(num_classes=1)
+    net = net.to(args.device)
 
+    if args.mode == 'train':
+        import time
+        time_start = time.time()  # 记录开始时间
+
+        print("-"*7+"正在训练"+"-"*7)
+        from data.loader import load_data
+        train_iter = load_data(args.batch_size)
+        trainnet(net, train_iter, args)
+        time_end = time.time()  # 记录结束时间
+        time_sum = time_end - time_start  # 计算的时间差为程序的执行时间，单位为秒/s
+        print(time_sum/60,"分钟")
+    if args.mode == 'test':
+        testnet(net, args)
 
 if __name__ == '__main__':
-    cfg = load_cfg()
-    setup_cfg(cfg)
-    validate_cfg(cfg)
-    save_cfg(cfg)
+    import torch
+    torch.cuda.empty_cache()
+    import gc
+    gc.collect()
+    cfg = parse_args()
     print_cfg(cfg)
     main(cfg)

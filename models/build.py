@@ -2,8 +2,6 @@ import copy
 
 from munch import Munch
 
-from models.discriminator import Discriminator
-from models.generator import Generator
 from models.mapping_network import MappingNetwork
 
 
