@@ -1,6 +1,6 @@
-#Tinyssd
+# Tinyssd
 
-pytorch项目模板来自[pytorch-template](https://github.com/songquanpeng/pytorch-template)，所以contributer和commit记录会有些异常。
+**注意：** pytorch项目模板来自[pytorch-template](https://github.com/songquanpeng/pytorch-template)，所以contributer和commit记录会有些异常。
 
 ## 环境配置
 
