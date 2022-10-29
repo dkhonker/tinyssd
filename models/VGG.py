@@ -8,6 +8,7 @@ import cv2
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import glob
+from .CBAM import CBAM
 
 class VGGBase(nn.Module):
     """
@@ -29,7 +30,6 @@ class VGGBase(nn.Module):
         self.conv3_2 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
         self.conv3_3 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
         self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=True)  # ceiling (not floor) here for even dims
-
 
     def forward(self, image):
         out = F.relu(self.conv1_1(image))

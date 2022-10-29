@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import glob
 from .CBAM import CBAM
 from .VGG import VGGBase
-from .resnet18 import  ResNet9
+from .resnet import  ResNet9
 
 
 #########################定义模型##############################
@@ -38,16 +38,21 @@ def base_net():
 
 
 
-def get_blk(i):
+def get_blk(i,args):
     if i == 0:
-        blk = ResNet9()#VGGBase()#base_net()
+        if args.backbone =='base':
+            blk = base_net()
+        if args.backbone =='vgg':
+            blk = VGGBase()
+        if args.backbone =='resnet':
+            blk = ResNet9()
     elif i == 1:
         blk = down_sample_blk(64, 128)
     elif i == 4:
         blk = nn.AdaptiveMaxPool2d((1, 1))
     else:
         blk = down_sample_blk(128, 128)
-    return
+    return blk
 
 
 def multibox_prior(data, sizes, ratios):
@@ -107,7 +112,6 @@ def concat_preds(preds):
 
 
 def blk_forward(X, blk, size, ratio, cls_predictor, bbox_predictor):
-    print(X)
     Y = blk(X)
     anchors = multibox_prior(Y, sizes=size, ratios=ratio)
     cls_preds = cls_predictor(Y)
@@ -122,13 +126,13 @@ num_anchors = len(sizes[0]) + len(ratios[0]) - 1
 
 
 class TinySSD(nn.Module):
-    def __init__(self, num_classes, **kwargs):
+    def __init__(self, num_classes,args, **kwargs):
         super(TinySSD, self).__init__(**kwargs)
         self.num_classes = num_classes
         idx_to_in_channels = [64, 128, 128, 128, 128]
         for i in range(5):
             # 即赋值语句self.blk_i=get_blk(i)
-            setattr(self, f'blk_{i}', get_blk(i))
+            setattr(self, f'blk_{i}', get_blk(i, args))
             setattr(self, f'cls_{i}', cls_predictor(idx_to_in_channels[i],
                                                     num_anchors, num_classes))
             setattr(self, f'bbox_{i}', bbox_predictor(idx_to_in_channels[i],

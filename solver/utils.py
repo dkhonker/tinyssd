@@ -1,7 +1,6 @@
 import torch
 from torch import nn
 
-
 def he_init(module):
     if isinstance(module, nn.Conv2d):
         nn.init.kaiming_normal_(module.weight, mode='fan_in', nonlinearity='relu')

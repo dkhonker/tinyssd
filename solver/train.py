@@ -44,8 +44,8 @@ def trainnet(net,train_iter,args):
     num_epochs = args.epochs  # 20
     if args.wandb_use == True:
         import wandb
-        wandb.login(key='68b7dd90cbb4340172d092c05b0570186ee25a62')
-        wandb.init(project="tinyssd", entity="dkhonker")
+        wandb.login(key='')#输入自己的wandb的key
+        wandb.init(project="tinyssd", entity="dkhonker",config=args)
     for epoch in range(num_epochs):
         print('epoch: ', epoch)
         # 训练精确度的和，训练精确度的和中的示例数
@@ -74,9 +74,14 @@ def trainnet(net,train_iter,args):
                 "train/cls_loss": cls_err,
                 "train/bbox_mae": bbox_mae,
             })
-
         # 保存模型参数
         if (epoch+1) % 10 == 0:
-            torch.save(net.state_dict(), 'weights/net_' + str(epoch+1) + '.pkl')
+            if args.CBAM == True:
+                torch.save(net.state_dict(), 'weights/' + args.backbone + '+CBAM/net_' + str(epoch + 1) + '.pkl')
+            else:
+                torch.save(net.state_dict(), 'weights/' + args.backbone + '/net_' + str(epoch + 1) + '.pkl')
+
+
+
     if args.wandb_use == True:
         wandb.finish(0)

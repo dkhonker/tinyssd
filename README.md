@@ -1,65 +1,125 @@
-# PyTorch Template
-> A clear PyTorch template for swift model building.
+## 环境配置
 
-## Features
-+ [x] Well-organized project template out of the box.
-+ [x] Automatically record the model version (by saving the git commit hash) for later reproduction.
-+ [x] Automatically start TensorBoard for you.
-+ [x] Use JSON file or command line arguments to specify arguments.
-+ [x] The results of each experiment are properly stored.
+pytorch 1.7.0
 
+CUDA 11.0
 
-## Steps For Using This Template
-1. Modifiy the model structures `models/build.py`.
-2. Update the loss functions used `solver/loss.py`.
-3. Update the data loading process `data/dataset.py` & `data/loader.py`.
-4. Add metrics that can measure your model's performance `metrics/eval.py`.
-5. Update sampling functions & logging functions so you can see the results with TensorBoard `solver/solver.py`!
-6. Add a shell script that run your model `scripts/{exp_id}-model_key_config.sh`.
-7. Start training, evaluating or inferencing by running the above script!
+GTX 2080Ti
 
-## Structures
-```
-+--- .gitignore
-+--- archive (generated files & dataset)
-|   +--- README.md
-+--- bin (utility script)
-|   +--- README.md
-|   +--- template.py
-+--- config.py (options)
-+--- data (data fetching related)
-|   +--- dataset.py
-|   +--- fetcher.py
-|   +--- loader.py
-|   +--- README.md
-+--- expr (experiment directory)
-+--- main.py (everything start from here)
-+--- metrics (metric used)
-|   +--- eval.py
-|   +--- fid.py
-|   +--- README.md
-+--- models (model architecture related)
-|   +--- build.py (the wrapper for models)
-|   +--- discriminator.py
-|   +--- generator.py
-|   +--- layers.py
-|   +--- mapping_network.py
-|   +--- README.md
-+--- README.md
-+--- requirements.txt
-+--- scripts (training related shell scripts)
-|   +--- train.sh
-+--- solver (training related)
-|   +--- loss.py
-|   +--- misc.py
-|   +--- solver.py
-|   +--- utils.py
-+--- utils (utility functions)
-|   +--- checkpoint.py
-|   +--- file.py
-|   +--- image.py
-|   +--- logger.py
-|   +--- misc.py
-|   +--- model.py
-```
+## 训练配置
 
+batch size 为64
+
+epoch为50
+
+学习率为0.2
+
+weight decay 为5e-4
+
+## 模型中使用的方法
+
+### 原始架构
+
+原始架构来自老师给的Tinyssd代码。
+
+### VGG结构
+
+VGG结构由Visual Geometry Group提出，是一种使用多个3 * 3卷积叠加的模型。
+
+我们将其替换原始Tinyssd网络中的base_net。
+
+### Resnet9架构
+
+Resnet9是一种由David Page提出的，在CIFAR10数据集上在79秒内达到94%准确率的模型。是DAWNBench排行榜上花费最短的训练时间在CIFAR10上达到94%准确率的模型。
+
+我们将其替换原始Tinyssd网络中的base_net。
+
+### CBAM
+
+CBAM( Convolutional Block Attention Module )是一种轻量级注意力模块的提出于2018年,它可以在空间维度和通道维度上进行Attention操作。
+
+![image-20221029205719061](C:\Users\李\AppData\Roaming\Typora\typora-user-images\image-20221029205719061.png)
+
+## 代码使用方法
+
+参数：
+
+- **mode**-  模式，可选`train`或`test`.默认 `train`
+
+- **epochs**-  默认 `3`
+- **batch_size** - 默认`64`
+- **lr** - 学习率. 默认 `0.2`
+- **weight_decay** -  默认 `5e-4`
+- **wandb_use** - 是否使用wandb来记录训练过程。**注意！**若需使用需要先在`solver/train.py`代码中填入自己的key，默认 `False`
+- **seed** - 随机种子. 默认 `3607`
+- **pretrain** - 需要加载的模型权重，用于预训练或者测试。默认 `None`
+- **backbone** - 可选`base`(即原始架构)、`vgg` 、`resnet` .默认`base`
+- **CBAM** - 是否使用CBAM模块。默认`False`
+
+示例：
+
+- 训练
+
+（不用wandb时）
+
+`python main.py --epochs 50  --mode train  --backbone resnet --CBAM True`
+
+（需要用wandb时）
+
+`python main.py --epochs 50  --mode train  --backbone resnet --CBAM True --wandb_use True`
+
+- 测试
+
+`python main.py  --mode test --pretrain weights/resnet+CBAM/net_50.pkl --backbone resnet --CBAM True`
+
+## 代码文件说明
+
+  ```
+  tinyssd/
+  │
+  ├── main.py - 主函数
+  │
+  ├── config.py - 获取执行参数
+  │
+  ├── dataset/ - 数据集，分为train/test/val
+  │
+  ├── data/ - 读取数据集
+  │   ├── dataset.py
+  │   └── loader.py
+  │
+  ├── weights/ - 存储模型权重
+  │
+  ├── weights/ - 存储测试图像
+  │
+  ├── models/ - 模型文件
+  │   ├── CBAM.py 
+  │   ├── VGG.py 
+  │   ├── resnet.py
+  │   └── model.py - 主模型
+  ├── solver/ - 包含训练和测试
+  │   ├── train.py - 根据传入的参数训练网络
+  │   ├── test.py - 测试并保持检测结果
+  │   ├── loss.py - 计算loss用于训练
+  │   └── trainer.py
+  │
+  └── utils/ 
+      ├── model.py - 计算模型参数量
+      └── utils.py - 一些比较杂的函数
+  ```
+
+## 实验结果
+
+| 模型架构    | 效果图                                                       |
+| ----------- | ------------------------------------------------------------ |
+| 原始        | ![base](E:\恢复\大三上\人工智能原理实验\pytorch-template\demo\base.jpg) |
+| 原始+CBAM   | ![base](E:\恢复\大三上\人工智能原理实验\pytorch-template\demo\base+CBAM.jpg) |
+| resnet结构  | ![base](E:\恢复\大三上\人工智能原理实验\pytorch-template\demo\resnet.jpg) |
+| resnet+CBAM | ![base](E:\恢复\大三上\人工智能原理实验\pytorch-template\demo\resnet+CBAM.jpg) |
+| VGG         | ![base](E:\恢复\大三上\人工智能原理实验\pytorch-template\demo\vgg.jpg) |
+| VGG+CBAM    | ![base](E:\恢复\大三上\人工智能原理实验\pytorch-template\demo\vgg+CBAM.jpg) |
+
+参考资料：
+
+1.DAWNBench: https://dawn.cs.stanford.edu/benchmark/index.html#cifar10
+
+2.CBAM:

@@ -10,9 +10,6 @@ import torch
 #from munch import Munch
 from torch.backends import cudnn
 
-from utils.file import prepare_dirs, list_sub_folders
-from utils.file import save_json
-from utils.misc import get_datetime, str2bool, get_commit_hash, start_tensorboard
 
 
 def setup_cfg(args):
@@ -87,13 +84,11 @@ def parse_args():
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu')
 
     # Model related arguments.
-    parser.add_argument('--img_size', type=int, default=256)
-    parser.add_argument('--init_weights', type=str, default='he', choices=['he', 'default'])
+    #parser.add_argument('--img_size', type=int, default=256)
+    #parser.add_argument('--init_weights', type=str, default='he', choices=['he', 'default'])
 
     # Training related arguments
     parser.add_argument('--batch_size', type=int, default=64)
-    #parser.add_argument('--start_iter', type=int, default=0)
-    #parser.add_argument('--end_iter', type=int, default=200000)
     parser.add_argument('--epochs', type=int, default=3)
 
 
@@ -103,17 +98,13 @@ def parse_args():
 
 
     # Step related arguments.
-    parser.add_argument('--log_every', type=int, default=10)
     parser.add_argument('--wandb_use', type=bool, default=False)
-
-    # Log related arguments.
-    #parser.add_argument('--use_tensorboard', type=str2bool, default=True)
-    #parser.add_argument('--start_tensorboard', type=str2bool, default=False)
-    #parser.add_argument('--save_loss', type=str2bool, default=True)
 
     # Others
     parser.add_argument('--seed', type=int, default=3407, help='Seed for random number generator.')
     parser.add_argument('--pretrain', type=str, default=None,
                         help='The name list of the pretrained models that you used.')
 
+    parser.add_argument('--backbone', type=str, default='base', choices=['base', 'vgg', 'resnet'])
+    parser.add_argument('--CBAM', type=bool, default=False)
     return parser.parse_args()

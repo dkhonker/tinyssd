@@ -74,7 +74,15 @@ def testnet(net,args):
         img = X.squeeze(0).permute(1, 2, 0).long()
 
         output = predict(X,net,args.device)
-        display(img, output.cpu(), threshold=0.65)
-    plt.savefig("demo/demo.jpg")
+        if args.backbone=="vgg":
+            display(img, output.cpu(), threshold=0.42)
+        elif args.backbone == "resnet":
+            display(img, output.cpu(), threshold=0.60)
+        else:
+            display(img, output.cpu(), threshold=0.45)
+    if args.CBAM ==True:
+        plt.savefig("demo/"+args.backbone+"+CBAM.jpg")
+    else:
+        plt.savefig("demo/" + args.backbone + ".jpg")
     #plt.show()
         # break
