@@ -111,15 +111,15 @@ CBAM( Convolutional Block Attention Module )是一种轻量级注意力模块的
 
 | 模型架构    | 效果图                                                       |
 | ----------- | ------------------------------------------------------------ |
-| 原始        | ![base](E:\恢复\大三上\人工智能原理实验\pytorch-template\demo\base.jpg) |
-| 原始+CBAM   | ![base](E:\恢复\大三上\人工智能原理实验\pytorch-template\demo\base+CBAM.jpg) |
-| resnet结构  | ![base](E:\恢复\大三上\人工智能原理实验\pytorch-template\demo\resnet.jpg) |
-| resnet+CBAM | ![base](E:\恢复\大三上\人工智能原理实验\pytorch-template\demo\resnet+CBAM.jpg) |
-| VGG         | ![base](E:\恢复\大三上\人工智能原理实验\pytorch-template\demo\vgg.jpg) |
-| VGG+CBAM    | ![base](E:\恢复\大三上\人工智能原理实验\pytorch-template\demo\vgg+CBAM.jpg) |
+| 原始        | ![base](demo\base.jpg) |
+| 原始+CBAM   | ![base](demo\base+CBAM.jpg) |
+| resnet结构  | ![base](demo\resnet.jpg) |
+| resnet+CBAM | ![base](demo\resnet+CBAM.jpg) |
+| VGG         | ![base](demo\vgg.jpg) |
+| VGG+CBAM    | ![base](demo\vgg+CBAM.jpg) |
 
 参考资料：
 
 1.DAWNBench: https://dawn.cs.stanford.edu/benchmark/index.html#cifar10
 
-2.CBAM:
+2.CBAM:https://arxiv.org/abs/1807.06521
