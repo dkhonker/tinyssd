@@ -98,8 +98,8 @@ def parse_args():
 
 
     # Optimizing related arguments.
-    parser.add_argument('--lr', type=float, default=1e-4, help="Learning rate for generator.")
-    parser.add_argument('--weight_decay', type=float, default=1e-4)
+    parser.add_argument('--lr', type=float, default=0.2, help="Learning rate for generator.")
+    parser.add_argument('--weight_decay', type=float, default=5e-4)
 
 
     # Step related arguments.

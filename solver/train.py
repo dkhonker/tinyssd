@@ -80,4 +80,3 @@ def trainnet(net,train_iter,args):
             torch.save(net.state_dict(), 'weights/net_' + str(epoch+1) + '.pkl')
     if args.wandb_use == True:
         wandb.finish(0)
-

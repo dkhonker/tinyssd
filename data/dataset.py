@@ -12,7 +12,6 @@ import glob
 
 #########################加载数据##############################
 def read_data(is_train=True):
-    """读取检测数据集中的图像和标签"""
     data_dir = 'dataset'
     csv_fname = os.path.join(data_dir, 'train' if is_train
     else 'val', 'label.csv')

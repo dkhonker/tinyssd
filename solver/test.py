@@ -74,7 +74,7 @@ def testnet(net,args):
         img = X.squeeze(0).permute(1, 2, 0).long()
 
         output = predict(X,net,args.device)
-        display(img, output.cpu(), threshold=0.80)
+        display(img, output.cpu(), threshold=0.65)
     plt.savefig("demo/demo.jpg")
     #plt.show()
         # break
