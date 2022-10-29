@@ -38,7 +38,7 @@ Resnet9是一种由David Page提出的，在CIFAR10数据集上在79秒内达到
 
 CBAM( Convolutional Block Attention Module )是一种轻量级注意力模块的提出于2018年,它可以在空间维度和通道维度上进行Attention操作。
 
-![image-20221029205719061](C:\Users\李\AppData\Roaming\Typora\typora-user-images\image-20221029205719061.png)
+![image-20221029205719061](https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTq1wcwTrEXzvws8pn-LTW9MjBBJc-xEZwfDP3acMq8&s)
 
 ## 代码使用方法
 
